@@ -203,4 +203,3 @@ if __name__ == "__main__":
     
     # Plot frequencies
     station1.plot_frequencies()
-    station2.plot_frequencies()
