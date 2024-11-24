@@ -221,8 +221,8 @@ class GroundStation:
                     last_send_time = 0
                     while self.running:
                         current_time = time.time()
-                        # Limit send rate to every 100ms
-                        if current_time - last_send_time >= 0.1:
+                        # Increase minimum time between sends from 0.1s to 0.5s
+                        if current_time - last_send_time >= 0.2:  # Changed from 0.1
                             peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
                             
                             if peak_freq is not None and peak_power is not None:
@@ -247,7 +247,7 @@ class GroundStation:
                                     time.sleep(0.05)
                                     continue
                     
-                        time.sleep(0.01)  # Small sleep to prevent CPU hogging
+                        time.sleep(0.02)  # Increased from 0.01 to reduce CPU usage
             except Exception as e:
                 print(f"Sender error: {e}")
                 time.sleep(1)  # Wait before retrying connection
@@ -261,16 +261,13 @@ class GroundStation:
             while self.running:
                 peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
                 if peak_freq is not None and peak_power is not None:
-                    # Ensure local data also has 5 values in the tuple
                     self.sender_data['local'] = (peak_freq, peak_power, self.location, self.name, target_power_dB)
                     
-                    # Process when we have fresh data from all connected clients plus local
-                    if len(self.sender_data) == len(self.clients) + 1:  # +1 for local
+                    if len(self.sender_data) == len(self.clients) + 1:
                         self._audio_calcs(print_data=True)
-                        # Clear all data after processing
                         self.sender_data.clear()
                 
-                time.sleep(0.1)
+                time.sleep(0.2)  # Increased from 0.1 to reduce processing frequency
 
     def _audio_calcs(self, print_data=False):
         """Calculate audio data - only called by receiver stations"""
