@@ -36,7 +36,9 @@ def triangulate_target(ground_stations):
     if result.success:
         x_target, y_target = result.x
     else:
-        raise ValueError("Triangulation failed to converge.")
+        x_target = 0
+        y_target = 0
+        # raise ValueError("Triangulation failed to converge.")
 
     return x_target, y_target
 

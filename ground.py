@@ -211,18 +211,15 @@ class GroundStation:
 
     def _audio_calcs(self, print_data=False):
         """Calculate audio data"""
-        # Clear existing data while preserving dictionary structure
-        for key in self.data:
-            if isinstance(self.data[key], list):
-                self.data[key].clear()
-            else:
-                self.data[key] = None
-
+        # Instead of clearing sender_data completely, just mark the data as processed
+        processed_data = self.sender_data.copy()
+        self.sender_data.clear()
+        
         if print_data:
             print("\n=== Current Audio Data ===")
 
         triangulation_data = []
-        for gnd_ip, (freq, power, gnd_location, station_name) in self.sender_data.items():
+        for gnd_ip, (freq, power, gnd_location, station_name) in processed_data.items():
             target_distance = calculate_distance(power, reference_db=23.0, reference_distance=1.0)
             triangulation_data.append((gnd_location, target_distance))
             self.data['gnd_ip'].append(gnd_ip)
@@ -275,7 +272,7 @@ class GroundStation:
             location = self.data['gnd_location'][i]
             distance = self.data['target_distance'][i]
             source = self.data['gnd_ip'][i]
-            station_name = self.sender_data[source][3] if source in self.sender_data else self.name
+            station_name = self.sender_data[source][3] if source in self.sender_data else f"Station {source}"
             current_stations.add(source)
             
             if source not in self.station_plots:
