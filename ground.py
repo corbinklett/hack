@@ -222,7 +222,7 @@ class GroundStation:
 
         triangulation_data = []
         for gnd_ip, (freq, power, gnd_location, station_name, target_power_dB) in processed_data.items():
-            target_distance = calculate_distance(target_power_dB, reference_db=49.0, reference_distance=2.0)
+            target_distance = calculate_distance(target_power_dB, reference_db=80.0, reference_distance=2.0)
             triangulation_data.append((gnd_location, target_distance))
             self.data['gnd_ip'].append(gnd_ip)
             self.data['freq'].append(freq)

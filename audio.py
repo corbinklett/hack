@@ -59,15 +59,15 @@ class AudioProcessor:
         peak_power = 20 * np.log10(masked_fft[peak_idx] + 1e-10)
 
         # Calculate matched signal and correlation
-        if self.df is not None:
-            matched_signal, correlation = match_signal_shape(np.abs(fft_data), self.df, 
-                                                          self.freq_mask, reference_distance=2)
-            # Calculate total power from matched signal within the frequency band
-            matched_signal_masked = matched_signal #[mask]
-            total_power = 20 * np.log10(np.sum(matched_signal_masked) + 1e-10)
-        else:
-            # Fallback to original calculation if no reference data
-            total_power = 20 * np.log10(np.sum(masked_fft) + 1e-10)
+        # if self.df is not None:
+        #     matched_signal, correlation = match_signal_shape(np.abs(fft_data), self.df, 
+        #                                                   self.freq_mask, reference_distance=2)
+        #     # Calculate total power from matched signal within the frequency band
+        #     matched_signal_masked = matched_signal #[mask]
+        #     total_power = 20 * np.log10(np.sum(matched_signal_masked) + 1e-10)
+        # else:
+        #     # Fallback to original calculation if no reference data
+        total_power = 20 * np.log10(np.sum(masked_fft) + 1e-10)
 
         if peak_power > best_peak and peak_freq > self.freq_min:
             best_peak = peak_power
@@ -176,7 +176,6 @@ class AudioProcessor:
         if self.df is not None:
             matched_signal, correlation = match_signal_shape(np.power(10, fft_mag/20), self.df, 
                                                  self.freq_mask, reference_distance=2)
-            print(correlation)
             
             # Make sure matched_signal matches the frequency data length
             if len(matched_signal) != len(freqs):
