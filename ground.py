@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
 class GroundStation:
-    def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0)):
+    def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0), plot_enabled=False):
         """
         Initialize a ground station that can act as either sender or receiver
         
@@ -35,6 +35,10 @@ class GroundStation:
         self.clients: Dict[str, socket.socket] = {}
         self.sender_data: Dict[str, Tuple[float, float]] = {}  # {client_addr: (peak_freq, peak_power)}
         
+        # Set the backend before importing pyplot
+        import matplotlib
+        matplotlib.use('TkAgg')  # Use TkAgg backend which is more stable for threading
+        
         # Add plotting setup
         self.fig, self.ax = None, None
         self.station_plots = {}
@@ -42,7 +46,9 @@ class GroundStation:
         self.target_plot = None
         
         # Add plotting flag
-        self.plot_enabled = station_type == 'receiver'
+        self.plot_enabled = plot_enabled
+        if self.plot_enabled:
+            self._setup_plot()  # Initialize plot on main thread
         
     def start(self):
         """Start the ground station operations"""
@@ -164,11 +170,21 @@ class GroundStation:
     def _print_all_data(self):
         """Print peak frequencies and powers from all sources"""
         print("\n=== Current Audio Data ===")
-        
-        for source, (freq, power, location) in self.sender_data.items():
-            print(f"Source: {source:15} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB")
+        source, freq, power, location, triangulation_data, (x_target, y_target) = self._audio_calcs(print_data=True)
+        print(f"Target Location: {x_target:.2f}, {y_target:.2f}")
         print("========================\n")
 
+    def _audio_calcs(self, print_data=False):
+        """Calculate audio data"""
+        triangulation_data = []
+        for source, (freq, power, location) in self.sender_data.items():
+            distance = calculate_distance(power, reference_db=94.0, reference_distance=1.0)
+            triangulation_data.append((location, distance))
+            if print_data:
+                print(f"Station: {source:15} Location: {location[0]:.2f}, {location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {distance:.2f} m")  
+        x_target, y_target = triangulate_target(triangulation_data)
+        return source,freq, power, location, triangulation_data, (x_target, y_target)
+    
     def _setup_plot(self):
         """Initialize the real-time plotting"""
         plt.ion()
@@ -178,47 +194,41 @@ class GroundStation:
         self.ax.set_title("Ground Station Positions and Target Triangulation")
         self.ax.grid(True)
         plt.tight_layout()
+        plt.show(block=False)
 
     def _plot_all_data(self):
         """Plot ground station positions, distance circles, and triangulated target"""
         if self.fig is None:
-            self._setup_plot()
+            return
+
+        # Clear previous plots
+        self.ax.clear()
+        self.station_plots = {}
+        self.circle_plots = {}
+        self.target_plot = None
 
         # Calculate distances and prepare triangulation data
-        triangulation_data = []
+        
         for source, (freq, power, location) in self.sender_data.items():
-            distance = calculate_distance(power, reference_db=94.0, reference_distance=1.0)
-            triangulation_data.append((location, distance))
-            
-            # Update or create station plot
-            if source not in self.station_plots:
-                station_plot, = self.ax.plot(location[0], location[1], 'bs', label=f'Station {source}')
-                self.station_plots[source] = station_plot
-                circle = Circle(location, distance, fill=False, linestyle='--', alpha=0.5)
-                self.circle_plots[source] = self.ax.add_patch(circle)
-            else:
-                self.station_plots[source].set_data(location[0], location[1])
-                self.circle_plots[source].remove()
-                circle = Circle(location, distance, fill=False, linestyle='--', alpha=0.5)
-                self.circle_plots[source] = self.ax.add_patch(circle)
+
+            # Plot station and circle
+            self.ax.plot(location[0], location[1], 'bs', label=f'Station {source}')
+            circle = Circle(location, distance, fill=False, linestyle='--', alpha=0.5)
+            self.ax.add_patch(circle)
 
         # Calculate and plot triangulated target
         target_location = triangulate_target(triangulation_data)
         if target_location:
-            if self.target_plot is None:
-                self.target_plot, = self.ax.plot(target_location[0], target_location[1], 'ro', 
-                                               markersize=10, label='Target')
-            else:
-                self.target_plot.set_data(target_location[0], target_location[1])
+            self.ax.plot(target_location[0], target_location[1], 'ro', 
+                        markersize=10, label='Target')
 
-        # Update plot limits to show all points
+        # Update plot settings
+        self.ax.grid(True)
+        self.ax.legend()
         self._update_plot_limits()
         
-        # Update legend
-        self.ax.legend()
-        
-        # Refresh the plot
-        self.fig.canvas.draw_idle()
+        # Force drawing update
+        self.fig.canvas.draw()
         self.fig.canvas.flush_events()
 
     def _update_plot_limits(self):
@@ -227,7 +237,7 @@ class GroundStation:
         y_coords = []
         
         # Collect all x, y coordinates
-        for location, _ in self.sender_data.values():
+        for _, (_, _, location) in self.sender_data.items():
             x_coords.append(location[0])
             y_coords.append(location[1])
         
@@ -249,13 +259,16 @@ class GroundStation:
     def _continuous_plot(self):
         """Continuously update the plot at regular intervals"""
         while self.running:
-            if len(self.sender_data) > 0:  # Only plot if we have data
-                self._plot_all_data()
-            time.sleep(0.1)  # Update plot every 100ms
+            try:
+                if len(self.sender_data) > 0:  # Only plot if we have data
+                    self._plot_all_data()
+                plt.pause(0.1)  # Gives time for the GUI to update
+            except Exception as e:
+                print(f"Plot error: {e}")
 
 if __name__ == "__main__":
     # Example usage as receiver:
-    station = GroundStation('receiver', host='0.0.0.0', port=58392)
+    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True)
     
     # Example usage as sender:
     # station = GroundStation('sender', port=58392)
