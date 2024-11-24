@@ -4,8 +4,11 @@ import matplotlib.pyplot as plt
 from queue import Queue, Empty
 from scipy.fft import fft
 
+best_peak = 0
+peak_freq = 0
+
 class AudioProcessor:
-    def __init__(self, sample_rate=44100, duration=0.1, freq_min=00, freq_max=7000, max_freq_collected=10000):
+    def __init__(self, sample_rate=44100, duration=0.1, freq_min=2000, freq_max=10000, max_freq_collected=10000):
         self.sample_rate = sample_rate
         self.duration = duration
         self.buffer_size = int(sample_rate * duration)
@@ -32,6 +35,8 @@ class AudioProcessor:
 
     def get_range_peak(self, fft_data, freqs, band_min, band_max):
         """Find peak frequency and power within specified frequency band"""
+        global best_peak, peak_freq  # Declare globals at start of function
+        
         mask = (freqs >= band_min) & (freqs <= band_max)
         masked_fft = np.abs(fft_data[mask])
         if len(masked_fft) == 0:
@@ -40,6 +45,11 @@ class AudioProcessor:
         peak_idx = np.argmax(masked_fft)
         peak_freq = freqs[mask][peak_idx]
         peak_power = 20 * np.log10(masked_fft[peak_idx] + 1e-10)
+
+        if peak_power > best_peak and peak_freq > self.freq_min:
+            best_peak = peak_power
+            peak_freq = peak_freq
+            print(f"New best peak: {best_peak} at {peak_freq} Hz")
         
         return peak_freq, peak_power
 
