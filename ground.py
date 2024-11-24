@@ -13,7 +13,7 @@ import matplotlib.animation as animation
 from multiprocessing import Process
 
 class GroundStation:
-    def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0), plot_enabled=False, name="default", low_cutoff_Hz = 500, thresh_dB = 30):
+    def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0), plot_enabled=False, name="default", low_cutoff_Hz = 500, thresh_dB = 30, target_filter_alpha = 0.1):
         """
         Initialize a ground station that can act as either sender or receiver
         
@@ -24,6 +24,7 @@ class GroundStation:
             location (tuple): (x, y) coordinates of the station
             plot_enabled (bool): Whether to enable real-time plotting
             name (str): Name of the ground station
+            target_filter_alpha (float): Low-pass filter coefficient (0-1). Lower values = more filtering
         """
         if station_type not in ['sender', 'receiver']:
             raise ValueError("station_type must be either 'sender' or 'receiver'")
@@ -75,6 +76,9 @@ class GroundStation:
                 save_count=100  # Limit frame cache to 100 frames
             )
 
+        self.target_filter_alpha = target_filter_alpha
+        self.filtered_target = (0, 0)  # Initialize as tuple instead of int
+        
     def start(self):
         """Start the ground station operations"""
         self.running = True
@@ -212,7 +216,10 @@ class GroundStation:
                 time.sleep(0.1)
 
     def _audio_calcs(self, print_data=False):
-        """Calculate audio data"""
+        """Calculate audio data - only called by receiver stations"""
+        if self.station_type != 'receiver':
+            raise RuntimeError("_audio_calcs should only be called by receiver stations")
+        
         # Instead of clearing sender_data completely, just mark the data as processed
         processed_data = self.sender_data.copy()
         self.sender_data.clear()
@@ -238,7 +245,16 @@ class GroundStation:
                 print(f"Station: {station_name:15} Location: {gnd_location[0]:.2f}, {gnd_location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {target_distance:.2f} m, Target Power: {target_power_dB:.2f} dB")  
     
         x_target, y_target = triangulate_target(triangulation_data)
-        self.data['target_location'] = (x_target, y_target)
+        
+        # Apply low-pass filter to both x and y coordinates
+        filtered_x = self.target_filter_alpha * x_target + (1 - self.target_filter_alpha) * self.filtered_target[0]
+
+        filtered_y = self.target_filter_alpha * y_target + (1 - self.target_filter_alpha) * self.filtered_target[1]
+        
+        self.filtered_target = (filtered_x, filtered_y)
+        x_target, y_target = self.filtered_target
+        
+        self.data['target_location'] = (self.filtered_target[0], self.filtered_target[1])
         
         if print_data:
             print(f"Target Location: {x_target:.2f}, {y_target:.2f}")
@@ -257,12 +273,11 @@ class GroundStation:
         # Initialize empty plots that we'll update later
         self.station_plots = {}
         self.circle_plots = {}
-        self.target_plot, = self.ax.plot([], [], 'ro', markersize=10, label='Target')
+        self.target_plot, = self.ax.plot([], [], 'ro', markersize=10)
         
         # Set fixed plot limits
         self.ax.set_xlim(-20, 20)
         self.ax.set_ylim(-20, 20)
-        self.ax.legend()
         
         plt.tight_layout()
         plt.show(block=False)
@@ -283,7 +298,7 @@ class GroundStation:
             
             if source not in self.station_plots:
                 self.station_plots[source], = self.ax.plot(
-                    [location[0]], [location[1]], 'bs', label=f'Station {source}'
+                    [location[0]], [location[1]], 'bs'
                 )
                 # Add text annotation next to the station point
                 self.station_plots[source].text_annotation = self.ax.annotate(
