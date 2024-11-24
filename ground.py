@@ -199,7 +199,7 @@ class GroundStation:
             while self.running:
                 peak_freq, peak_power = self.audio_processor._update_stream(plot=False)
                 if peak_freq is not None and peak_power is not None:
-                    self.sender_data['local'] = (peak_freq, peak_power, self.location)
+                    self.sender_data['local'] = (peak_freq, peak_power, self.location, self.name)
                     
                     # Process when we have fresh data from all connected clients plus local
                     if len(self.sender_data) == len(self.clients) + 1:  # +1 for local
@@ -222,7 +222,7 @@ class GroundStation:
             print("\n=== Current Audio Data ===")
 
         triangulation_data = []
-        for gnd_ip, (freq, power, gnd_location) in self.sender_data.items():
+        for gnd_ip, (freq, power, gnd_location, station_name) in self.sender_data.items():
             target_distance = calculate_distance(power, reference_db=94.0, reference_distance=1.0)
             triangulation_data.append((gnd_location, target_distance))
             self.data['gnd_ip'].append(gnd_ip)
@@ -232,7 +232,7 @@ class GroundStation:
             self.data['target_distance'].append(target_distance)
 
             if print_data:
-                print(f"Station: {gnd_ip:15} Location: {gnd_location[0]:.2f}, {gnd_location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {target_distance:.2f} m")  
+                print(f"Station: {station_name:15} Location: {gnd_location[0]:.2f}, {gnd_location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {target_distance:.2f} m")  
     
         x_target, y_target = triangulate_target(triangulation_data)
         self.data['target_location'] = (x_target, y_target)
