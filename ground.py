@@ -137,22 +137,58 @@ class GroundStation:
 
     def _handle_client(self, client_socket: socket.socket, client_addr: str):
         """Handle incoming data from a sender client"""
+        # Set TCP keepalive
+        client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        # Set non-blocking mode
+        client_socket.setblocking(False)
+        
+        buffer = b""
         while self.running:
             try:
-                data = client_socket.recv(4096)
-                if not data:
-                    break
-                    
+                # First read the message length (4 bytes)
+                while len(buffer) < 4:
+                    try:
+                        chunk = client_socket.recv(4 - len(buffer))
+                        if not chunk:
+                            raise ConnectionError("Connection closed by client")
+                        buffer += chunk
+                    except BlockingIOError:
+                        time.sleep(0.01)
+                        continue
+                
+                msg_length = int.from_bytes(buffer[:4], byteorder='big')
+                buffer = buffer[4:]
+                
+                # Then read the actual message
+                while len(buffer) < msg_length:
+                    try:
+                        chunk = client_socket.recv(msg_length - len(buffer))
+                        if not chunk:
+                            raise ConnectionError("Connection closed by client")
+                        buffer += chunk
+                    except BlockingIOError:
+                        time.sleep(0.01)
+                        continue
+                
+                data = buffer[:msg_length]
+                buffer = buffer[msg_length:]
+                
                 received_data = json.loads(data.decode('utf-8'))
-                # Store all 5 required values in the tuple
                 self.sender_data[client_addr] = (
                     received_data['peak_freq'],
                     received_data['peak_power'],
                     received_data['location'],
                     received_data.get('name', f'Station {client_addr}'),
-                    received_data['target_power_dB']  # Add this field
+                    received_data['target_power_dB']
                 )
                 
+            except (BlockingIOError, socket.timeout):
+                # No data available right now
+                time.sleep(0.01)
+                continue
+            except ConnectionError as e:
+                print(f"Connection error with client {client_addr}: {e}")
+                break
             except Exception as e:
                 print(f"Error handling client {client_addr}: {e}")
                 break
@@ -160,7 +196,8 @@ class GroundStation:
         # Clean up when client disconnects
         print(f"Client {client_addr} disconnected")
         del self.clients[client_addr]
-        del self.sender_data[client_addr]
+        if client_addr in self.sender_data:
+            del self.sender_data[client_addr]
         client_socket.close()
 
     def _start_sender(self):
@@ -169,51 +206,51 @@ class GroundStation:
             try:
                 # Create a new socket for each connection attempt
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # Add a timeout to detect connection issues
                 self.socket.settimeout(5.0)
+                # Add TCP keepalive
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 
                 print(f"Attempting to connect to receiver at {self.host}:{self.port}")
                 self.socket.connect((self.host, self.port))
                 print(f"Connected to receiver at {self.host}:{self.port}")
                 
-                # Initialize audio stream
                 with sd.InputStream(callback=self.audio_processor.audio_callback, 
                                   channels=1, 
                                   samplerate=self.audio_processor.sample_rate):
                     print("Streaming audio...")
-                    # Start sending audio processing results
+                    last_send_time = 0
                     while self.running:
-                        peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
-                        
-                        if peak_freq is not None and peak_power is not None:
-                            data = {
-                                "timestamp": time.time(),
-                                "peak_freq": peak_freq,
-                                "peak_power": peak_power,
-                                "location": self.location,
-                                "name": self.name,
-                                "target_power_dB": target_power_dB
-                            }
+                        current_time = time.time()
+                        # Limit send rate to every 100ms
+                        if current_time - last_send_time >= 0.1:
+                            peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
                             
-                            json_data = json.dumps(data).encode('utf-8')
-                            self.socket.send(json_data)
-                        
-                        time.sleep(0.1)  # Adjust as needed
-                        
-            except socket.timeout:
-                print("Connection timed out. Attempting to reconnect...")
-                time.sleep(2)  # Wait before retry
-            except ConnectionResetError:
-                print("Connection was forcibly closed. Attempting to reconnect...")
-                time.sleep(2)  # Wait before retry
+                            if peak_freq is not None and peak_power is not None:
+                                data = {
+                                    "timestamp": current_time,
+                                    "peak_freq": peak_freq,
+                                    "peak_power": peak_power,
+                                    "location": self.location,
+                                    "name": self.name,
+                                    "target_power_dB": target_power_dB
+                                }
+                                
+                                try:
+                                    json_data = json.dumps(data).encode('utf-8')
+                                    # Add message length prefix
+                                    msg_length = len(json_data)
+                                    header = msg_length.to_bytes(4, byteorder='big')
+                                    self.socket.sendall(header + json_data)
+                                    last_send_time = current_time
+                                except BlockingIOError:
+                                    # Socket buffer is full, wait a bit
+                                    time.sleep(0.05)
+                                    continue
+                    
+                        time.sleep(0.01)  # Small sleep to prevent CPU hogging
             except Exception as e:
                 print(f"Sender error: {e}")
-                time.sleep(2)  # Wait before retry
-            finally:
-                try:
-                    self.socket.close()
-                except:
-                    pass
+                time.sleep(1)  # Wait before retrying connection
 
     def _process_local_audio(self):
         """Process audio from local microphone"""
