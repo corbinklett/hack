@@ -1,3 +1,10 @@
+import numpy as np
+import numpy.linalg
+import scipy
+# Plot 3D drone location and velocity vector
+import matplotlib.pyplot as plt
+from scipy.optimize import least_squares
+
 def get_drone(observed_freq, ground_stations):
 
     # Constants
@@ -47,3 +54,8 @@ def get_drone(observed_freq, ground_stations):
     print(f"Drone position: ({x_d:.2f}, {y_d:.2f}, {h:.2f})")
     print(f"Drone velocity: ({v_x:.2f}, {v_y:.2f}, {v_h:.2f})")
     return result.x
+
+if __name__ == "__main__":
+    ground_stations=[[0, 0, 0], [5, 0, 0], [0, 5, 0], [0, 10, 0], [10,0,0], [10,10,0], [10, 5, 0], [5, 10, 0]]
+    observed_freq = [5989.917549534555, 6000.0, 5987.656232287858, 5989.917549534555, 6010.116450000785, 6010.116450000785, 6012.3947670873995, 6000.0]
+    get_drone(observed_freq, ground_stations)
