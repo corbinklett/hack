@@ -272,7 +272,7 @@ class GroundStation:
             location = self.data['gnd_location'][i]
             distance = self.data['target_distance'][i]
             source = self.data['gnd_ip'][i]
-            station_name = self.sender_data[source][3] if source in self.sender_data else f"Station {source}"
+            station_name = self.sender_data[source][3] if source in self.sender_data else self.name
             current_stations.add(source)
             
             if source not in self.station_plots:
