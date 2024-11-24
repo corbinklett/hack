@@ -36,24 +36,8 @@ def triangulate_target(ground_stations):
         x_target, y_target = result.x
     else:
         raise ValueError("Triangulation failed to converge.")
-    
-    # Now check for possible multiple solutions (here we will use a very simple logic for demonstration)
-    # A more advanced method would require checking intersections of the distance functions.
-    # For now, we simply assume that if the estimated result is close to the boundary, multiple solutions exist.
-    # This is a simplistic check and could be refined further.
-    
-    # Generate nearby possible solutions by slightly altering the target location
-    possible_solutions = [
-        (x_target + 0.5, y_target),  # Shift slightly in the x-direction
-        (x_target - 0.5, y_target),  # Shift slightly in the opposite direction
-        (x_target, y_target + 0.5),  # Shift slightly in the y-direction
-        (x_target, y_target - 0.5)   # Shift slightly in the opposite direction
-    ]
-    
-    # Pick the solution with the greatest x-coordinate (if multiple solutions are equally likely)
-    best_solution = max(possible_solutions, key=lambda pos: pos[0])
 
-    return best_solution
+    return x_target, y_target
 
 
 
@@ -63,8 +47,8 @@ if __name__ == "__main__":
         # Example usage:
     ground_stations = [
         (0, 3, 5),  # Station at (0, 0) with a distance of 5 units
-        (0, -3, 5),  # Station at (4, 0) with a distance of 5 units
-        #(-1, 0, 6)   # Station at (2, 4) with a distance of 4 units
+        (0, -3, 8),  # Station at (4, 0) with a distance of 5 units
+        (-1, 0, 6)   # Station at (2, 4) with a distance of 4 units
     ]
     
     target_position = triangulate_target(ground_stations)
@@ -96,5 +80,3 @@ if __name__ == "__main__":
     
    
     pass
-
-
