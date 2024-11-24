@@ -165,37 +165,55 @@ class GroundStation:
 
     def _start_sender(self):
         """Initialize and run the sender station"""
-        try:
-            self.socket.connect((self.host, self.port))
-            print(f"Connected to receiver at {self.host}:{self.port}")
-            
-            # Initialize audio stream
-            with sd.InputStream(callback=self.audio_processor.audio_callback, 
-                              channels=1, 
-                              samplerate=self.audio_processor.sample_rate):
-                print("Streaming audio...")
-                # Start sending audio processing results
-                while self.running:
-                    peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
-                    
-                    if peak_freq is not None and peak_power is not None:
-                        data = {
-                            "timestamp": time.time(),
-                            "peak_freq": peak_freq,
-                            "peak_power": peak_power,
-                            "location": self.location,
-                            "name": self.name,
-                            "target_power_dB": target_power_dB
-                        }
+        while self.running:
+            try:
+                # Create a new socket for each connection attempt
+                self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                # Add a timeout to detect connection issues
+                self.socket.settimeout(5.0)
+                
+                print(f"Attempting to connect to receiver at {self.host}:{self.port}")
+                self.socket.connect((self.host, self.port))
+                print(f"Connected to receiver at {self.host}:{self.port}")
+                
+                # Initialize audio stream
+                with sd.InputStream(callback=self.audio_processor.audio_callback, 
+                                  channels=1, 
+                                  samplerate=self.audio_processor.sample_rate):
+                    print("Streaming audio...")
+                    # Start sending audio processing results
+                    while self.running:
+                        peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
                         
-                        json_data = json.dumps(data).encode('utf-8')
-                        self.socket.send(json_data)
-                        print(f"Sent: {data}")
-                    
-                    time.sleep(0.1)  # Adjust as needed
-                    
-        except Exception as e:
-            print(f"Sender error: {e}")
+                        if peak_freq is not None and peak_power is not None:
+                            data = {
+                                "timestamp": time.time(),
+                                "peak_freq": peak_freq,
+                                "peak_power": peak_power,
+                                "location": self.location,
+                                "name": self.name,
+                                "target_power_dB": target_power_dB
+                            }
+                            
+                            json_data = json.dumps(data).encode('utf-8')
+                            self.socket.send(json_data)
+                        
+                        time.sleep(0.1)  # Adjust as needed
+                        
+            except socket.timeout:
+                print("Connection timed out. Attempting to reconnect...")
+                time.sleep(2)  # Wait before retry
+            except ConnectionResetError:
+                print("Connection was forcibly closed. Attempting to reconnect...")
+                time.sleep(2)  # Wait before retry
+            except Exception as e:
+                print(f"Sender error: {e}")
+                time.sleep(2)  # Wait before retry
+            finally:
+                try:
+                    self.socket.close()
+                except:
+                    pass
 
     def _process_local_audio(self):
         """Process audio from local microphone"""
@@ -299,10 +317,6 @@ class GroundStation:
         """Animation update function"""
         if not plt.fignum_exists(self.fig.number):
             return
-        
-        # Add debug logging
-        print(f"Current stations in data: {self.data['gnd_ip']}")
-        print(f"Current plotted stations: {list(self.station_plots.keys())}")
         
         # Update or create station plots and circles
         current_stations = set()
