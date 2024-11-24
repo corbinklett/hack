@@ -11,15 +11,15 @@ sample_rate = 44100
 duration = 0.1
 buffer_size = int(sample_rate * duration)
 
-# Modified frequency band to focus on 440 Hz
-freq_min = 2700  # Hz (440 Hz ± 5 Hz)
-freq_max = 3200  # Hz
-ref_db = 94.0    # Reference dB for distance calculation
+# Modified frequency band to focus on target band
+freq_min = 2000  # Hz
+freq_max = 7000  # Hz
+max_freq_collected = 10000  # Hz
 
 def setup_plot(buffer_size):
-    global ax1, ax2, ax3
+    global ax1, ax2
     plt.ion()
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
     
     # Time domain plot
     x = np.arange(buffer_size) / sample_rate
@@ -30,26 +30,20 @@ def setup_plot(buffer_size):
     ax1.set_ylabel("Amplitude")
     ax1.set_title("Real-Time Audio Signal")
     
-    # Frequency domain plot
+    # Frequency domain plot - limit to 10000 Hz
     freqs = np.fft.fftfreq(buffer_size, 1/sample_rate)
-    line_freq, = ax2.plot(freqs[:buffer_size//2], np.zeros(buffer_size//2), '-')
-    ax2.set_xlim(0, sample_rate/2)
+    freq_mask = (freqs >= 0) & (freqs <= max_freq_collected)  # New mask for frequencies
+    line_freq, = ax2.plot(freqs[freq_mask], np.zeros(np.sum(freq_mask)), '-')
+    peak_point, = ax2.plot([], [], 'ro', markersize=10, label='Peak')
+    ax2.set_xlim(0, max_freq_collected)  # Changed to 10000 Hz
     ax2.set_ylim(0, 1)
     ax2.set_xlabel("Frequency (Hz)")
     ax2.set_ylabel("Magnitude")
     ax2.set_title("Real-Time FFT")
-    
-    # Distance plot - Create initial empty arrays of the correct size
-    max_points = int(30/duration)  # Number of points for 30 seconds
-    line_dist, = ax3.plot(np.zeros(max_points), np.zeros(max_points), '-')
-    ax3.set_xlim(0, 30)
-    ax3.set_ylim(0, 10)
-    ax3.set_xlabel("Time (s)")
-    ax3.set_ylabel("Distance (m)")
-    ax3.set_title(f"Estimated Distance (for {freq_min}-{freq_max} Hz)")
+    ax2.legend()
     
     plt.tight_layout()
-    return fig, line_time, line_freq, line_dist
+    return fig, line_time, line_freq, peak_point
 
 # Create a queue for communication between threads
 data_queue = Queue()
@@ -63,51 +57,44 @@ def audio_callback(indata, frames, time, status):
 def get_band_energy(fft_data, freqs):
     """Calculate energy in specified frequency band with improved filtering"""
     mask = (freqs >= freq_min) & (freqs <= freq_max)
-    # Apply Hanning window to reduce spectral leakage
-    window = np.hanning(np.sum(mask))
-    return np.mean(np.abs(fft_data[mask]) * window) * 20
+    return 20 * np.log10(np.mean(np.abs(fft_data[mask])) + 1e-10)
 
 # Modified update_plot function
 def update_plot():
-    global distance_history, time_history
-    current_time = 0
-    max_points = int(30/duration)  # Number of points for 30 seconds
-    distance_history = np.zeros(max_points)  # Pre-allocate arrays
-    time_history = np.zeros(max_points)
-    
     while True:
         try:
             data = data_queue.get_nowait()
-            current_time += duration
             
             # Ensure data length matches buffer_size
             if len(data) != buffer_size:
                 data = np.resize(data, buffer_size)
             
-            # Update time and frequency domain plots
+            # Update time domain plot
             line_time.set_ydata(data)
-            fft_data = fft(data)
-            freqs = np.fft.fftfreq(len(data), 1/sample_rate)[:len(data)//2]
-            fft_mag = np.abs(fft_data[:len(data)//2]) / len(data)
+            
+            # Apply Hanning window before FFT
+            window = np.hanning(len(data))
+            windowed_data = data * window
+            fft_data = fft(windowed_data)
+            
+            # Ensure consistent array sizes for frequency plot and limit to 10000 Hz
+            freqs = np.fft.fftfreq(buffer_size, 1/sample_rate)
+            freq_mask = (freqs >= 0) & (freqs <= max_freq_collected)  # New mask for frequencies
+            fft_mag = np.abs(fft_data[freq_mask]) / buffer_size
+            
+            # Update frequency plot with matching sizes
             line_freq.set_ydata(fft_mag)
             
-            # Calculate band energy and convert to dB
-            band_energy = get_band_energy(fft_data[:len(data)//2], freqs)
-            db_level = 20 * np.log10(band_energy) + ref_db
+            # Find peak frequency (only within our displayed range)
+            peak_idx = np.argmax(fft_mag)
+            peak_freq = freqs[freq_mask][peak_idx]
+            peak_magnitude = fft_mag[peak_idx]
             
-            # Calculate and plot distance
-            distance = calculate_distance(db_level, reference_db=ref_db)
-            distance_history = np.roll(distance_history, -1)
-            distance_history[-1] = distance
-            time_history = np.roll(time_history, -1)
-            time_history[-1] = current_time
+            # Update peak point
+            peak_point.set_data([peak_freq], [peak_magnitude])
             
-            # Keep only last 30 seconds of data
-            if current_time > 30:
-                distance_history = distance_history[-int(30/duration):]
-                time_history = time_history[-int(30/duration):]
-            
-            line_dist.set_data(time_history, distance_history)
+            # Add text annotation for peak values
+            ax2.set_title(f"Real-Time FFT (Peak: {peak_freq:.1f} Hz, Magnitude: {peak_magnitude:.3f})")
             
             fig.canvas.draw_idle()
             fig.canvas.flush_events()
@@ -117,7 +104,7 @@ def update_plot():
 
 # Initialize plot
 buffer_size = int(sample_rate * duration)
-fig, line_time, line_freq, line_dist = setup_plot(buffer_size)
+fig, line_time, line_freq, peak_point = setup_plot(buffer_size)
 
 # Start the audio stream
 try:
