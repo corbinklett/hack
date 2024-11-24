@@ -13,7 +13,7 @@ import matplotlib.animation as animation
 from multiprocessing import Process
 
 class GroundStation:
-    def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0), plot_enabled=False, name="S"):
+    def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0), plot_enabled=False, name="default", low_cutoff_Hz = 500, thresh_dB = 30):
         """
         Initialize a ground station that can act as either sender or receiver
         
@@ -32,11 +32,11 @@ class GroundStation:
         self.host = host
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.audio_processor = AudioProcessor()
+        self.audio_processor = AudioProcessor(freq_min=low_cutoff_Hz)
         self.running = False
         self.location = location
         self.name = name
-        
+        self.thresh_dB = thresh_dB
         # For receiver to track multiple sender connections
         self.clients: Dict[str, socket.socket] = {}
         self.sender_data: Dict[str, Tuple[float, float]] = {}  # {client_addr: (peak_freq, peak_power)}
@@ -222,7 +222,10 @@ class GroundStation:
 
         triangulation_data = []
         for gnd_ip, (freq, power, gnd_location, station_name, target_power_dB) in processed_data.items():
-            target_distance = calculate_distance(target_power_dB, reference_db=80.0, reference_distance=2.0)
+            if target_power_dB > self.thresh_dB:
+                target_distance = calculate_distance(target_power_dB, reference_db=80.0, reference_distance=2.0)
+            else:
+                target_distance = 0
             triangulation_data.append((gnd_location, target_distance))
             self.data['gnd_ip'].append(gnd_ip)
             self.data['freq'].append(freq)
@@ -318,10 +321,10 @@ class GroundStation:
 
 if __name__ == "__main__":
     # Example usage as receiver:
-    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main")
+    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main", low_cutoff_Hz=500, thresh_dB=50)
     
     # Example usage as sender:
-    # station = GroundStation('sender', host='10.33.1.252', port=58392, location=(4,0), name='corbin')
+    # station = GroundStation('sender', host='10.33.1.252', port=58392, location=(4,0), name='corbin', low_cutoff_Hz=500, thresh_dB=50)
     
     station.start()
     pass

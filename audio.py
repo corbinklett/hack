@@ -9,7 +9,7 @@ best_peak = 0
 peak_freq = 0
 
 class AudioProcessor:
-    def __init__(self, sample_rate=44100, duration=0.1, freq_min=0, freq_max=10000, max_freq_collected=10000):
+    def __init__(self, sample_rate=44100, duration=0.1, freq_min=500, freq_max=10000, max_freq_collected=10000):
         self.sample_rate = sample_rate
         self.duration = duration
         self.buffer_size = int(sample_rate * duration)
