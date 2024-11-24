@@ -73,12 +73,19 @@ def match_signal_shape(measured_fft, df, freq_mask, reference_distance=2):
     """
     # Get reference signal for distance=2
     reference = df[df['Distance'] == reference_distance].iloc[0][1:].values[freq_mask]
-    measured = measured_fft[freq_mask]
+
+    # assume the measured comes in masked, if necessary
+    measured = measured_fft #[freq_mask]
     
     # Normalize both signals to unit norm
     reference_normalized = reference / np.linalg.norm(reference)
     measured_normalized = measured / np.linalg.norm(measured)
     
+    # Pad reference if shorter than measured
+    if len(reference_normalized) < len(measured_normalized):
+        padding = np.zeros(len(measured_normalized) - len(reference_normalized))
+        reference_normalized = np.concatenate([reference_normalized, padding])
+
     # Calculate correlation coefficient
     correlation = np.corrcoef(reference_normalized, measured_normalized)[0,1]
     

@@ -3,12 +3,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from queue import Queue, Empty
 from scipy.fft import fft
-
+import pandas as pd
+from filter import match_signal_shape, read_and_process_data
 best_peak = 0
 peak_freq = 0
 
 class AudioProcessor:
-    def __init__(self, sample_rate=44100, duration=0.1, freq_min=2000, freq_max=10000, max_freq_collected=10000):
+    def __init__(self, sample_rate=44100, duration=0.1, freq_min=0, freq_max=10000, max_freq_collected=10000):
         self.sample_rate = sample_rate
         self.duration = duration
         self.buffer_size = int(sample_rate * duration)
@@ -16,6 +17,17 @@ class AudioProcessor:
         self.freq_max = freq_max
         self.max_freq_collected = max_freq_collected
         self.data_queue = Queue()
+        
+        # Add reference data loading
+        self.df, _, self.freq_mask, _ = self.load_reference_data()
+
+    def load_reference_data(self):
+        """Load and process reference data"""
+        try:
+            return read_and_process_data('fft_amplitudes_1.csv')
+        except FileNotFoundError:
+            print("Warning: Reference data file not found. Matched signal overlay disabled.")
+            return None, None, None, None
 
     def process_audio_data(self, audio_data):
         """Process raw audio data and return FFT results"""
@@ -62,7 +74,7 @@ class AudioProcessor:
 
     def stream_audio(self, plot=False):
         if plot:
-            fig, line_time, line_freq, peak_point, line_db = self._setup_plot()
+            fig, line_time, line_freq, peak_point, line_db, matched_line = self._setup_plot()
         
         try:
             with sd.InputStream(callback=self.audio_callback, 
@@ -70,14 +82,14 @@ class AudioProcessor:
                               samplerate=self.sample_rate):
                 print("Streaming audio... Press Ctrl+C to stop.")
                 while True:
-                    self._update_stream(plot, fig, line_time, line_freq, peak_point if plot else None, line_db if plot else None)
+                    self._update_stream(plot, fig, line_time, line_freq, peak_point if plot else None, line_db if plot else None, matched_line if plot else None)
                     if plot:
                         plt.pause(0.01)
         except KeyboardInterrupt:
             print("Stopped streaming.")
 
     def _update_stream(self, plot, fig=None, line_time=None, line_freq=None, 
-                      peak_point=None, line_db=None):
+                      peak_point=None, line_db=None, matched_line=None):
         try:
             data = self.data_queue.get_nowait()
             if len(data) != self.buffer_size:
@@ -88,8 +100,8 @@ class AudioProcessor:
                                                       self.freq_min, self.freq_max)
             
             if plot:
-                self._update_plots(data, freqs, fft_mag, peak_freq, peak_power, total_power,  # Added total_power
-                                 fig, line_time, line_freq, peak_point, line_db)
+                self._update_plots(data, freqs, fft_mag, peak_freq, peak_power, total_power,
+                                 fig, line_time, line_freq, peak_point, line_db, matched_line)
             
             return peak_freq, peak_power, total_power
             
@@ -131,7 +143,9 @@ class AudioProcessor:
         # Frequency domain plot - limit to 10000 Hz
         freqs = np.fft.fftfreq(self.buffer_size, 1/self.sample_rate)
         freq_mask = (freqs >= 0) & (freqs <= self.max_freq_collected)
-        line_freq, = ax2.plot(freqs[freq_mask], np.zeros(np.sum(freq_mask)), '-')
+        line_freq, = ax2.plot(freqs[freq_mask], np.zeros(np.sum(freq_mask)), '-', label='Current Signal')
+        matched_line, = ax2.plot(freqs[freq_mask], np.zeros(np.sum(freq_mask)), '--', 
+                                alpha=0.7, label='Matched Reference', color='green')
         peak_point, = ax2.plot([], [], 'ro', markersize=10, label='Peak')
         ax2.set_xlim(0, self.max_freq_collected)
         ax2.set_ylim(0, 60)
@@ -141,16 +155,31 @@ class AudioProcessor:
         ax2.legend()
         
         plt.tight_layout()
-        return fig, line_time, line_freq, peak_point, line_db
+        return fig, line_time, line_freq, peak_point, line_db, matched_line
 
-    def _update_plots(self, data, freqs, fft_mag, peak_freq, peak_power, total_power,  # Added total_power
-                     fig, line_time, line_freq, peak_point, line_db):
+    def _update_plots(self, data, freqs, fft_mag, peak_freq, peak_power, total_power,
+                     fig, line_time, line_freq, peak_point, line_db, matched_line):
         line_time.set_ydata(data)
         line_freq.set_ydata(fft_mag)
         peak_point.set_data([peak_freq], [peak_power])
         
-        # Update the decibel line with the total power
-        db_data = np.full_like(data, total_power if total_power is not None else 0)
+        # Update matched signal if reference data is available
+        if self.df is not None:
+            matched_signal, correlation = match_signal_shape(np.power(10, fft_mag/20), self.df, 
+                                                 self.freq_mask, reference_distance=2)
+            print(correlation)
+            
+            # Make sure matched_signal matches the frequency data length
+            if len(matched_signal) != len(freqs):
+                matched_signal = np.interp(
+                    np.linspace(0, 1, len(freqs)),
+                    np.linspace(0, 1, len(matched_signal)),
+                    matched_signal
+                )
+            matched_line.set_ydata(20 * np.log10(matched_signal + 1e-10))
+        
+        # Ensure db_data matches the time domain data length
+        db_data = np.full(len(data), total_power if total_power is not None else 0)
         line_db.set_ydata(db_data)
         
         fig.canvas.draw_idle()
