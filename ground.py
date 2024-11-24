@@ -143,14 +143,14 @@ class GroundStation:
                     break
                     
                 received_data = json.loads(data.decode('utf-8'))
-                # Only update data if we're awaiting new readings
-                if client_addr not in self.sender_data:
-                    self.sender_data[client_addr] = (
-                        received_data['peak_freq'],
-                        received_data['peak_power'],
-                        received_data['location'],
-                        received_data.get('name', f'Station {client_addr}')
-                    )
+                # Store all 5 required values in the tuple
+                self.sender_data[client_addr] = (
+                    received_data['peak_freq'],
+                    received_data['peak_power'],
+                    received_data['location'],
+                    received_data.get('name', f'Station {client_addr}'),
+                    received_data['target_power_dB']  # Add this field
+                )
                 
             except Exception as e:
                 print(f"Error handling client {client_addr}: {e}")
@@ -205,6 +205,7 @@ class GroundStation:
             while self.running:
                 peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
                 if peak_freq is not None and peak_power is not None:
+                    # Ensure local data also has 5 values in the tuple
                     self.sender_data['local'] = (peak_freq, peak_power, self.location, self.name, target_power_dB)
                     
                     # Process when we have fresh data from all connected clients plus local
@@ -351,7 +352,7 @@ class GroundStation:
 
 if __name__ == "__main__":
     # Example usage as receiver:
-    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main", low_cutoff_Hz=500, thresh_dB=60)
+    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main", low_cutoff_Hz=500, thresh_dB=50)
     
     # Example usage as sender:
     # station = GroundStation('sender', host='10.33.1.252', port=58392, location=(4,0), name='corbin', low_cutoff_Hz=500, thresh_dB=50)
