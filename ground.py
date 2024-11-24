@@ -220,6 +220,14 @@ class GroundStation:
         if self.station_type != 'receiver':
             raise RuntimeError("_audio_calcs should only be called by receiver stations")
         
+        # Clear old data before processing new readings
+        self.data['gnd_ip'] = []
+        self.data['freq'] = []
+        self.data['power'] = []
+        self.data['gnd_location'] = []
+        self.data['target_distance'] = []
+        self.data['target_power_dB'] = []
+        
         # Instead of clearing sender_data completely, just mark the data as processed
         processed_data = self.sender_data.copy()
         self.sender_data.clear()
@@ -289,12 +297,19 @@ class GroundStation:
         
         # Update or create station plots and circles
         current_stations = set()
+        any_signal_above_threshold = False
+        
         for i in range(len(self.data['gnd_ip'])):
             location = self.data['gnd_location'][i]
             distance = self.data['target_distance'][i]
             source = self.data['gnd_ip'][i]
+            target_power_dB = self.data['target_power_dB'][i]
             station_name = self.sender_data[source][3] if source in self.sender_data else self.name
             current_stations.add(source)
+            
+            # Check if any station detects signal above threshold
+            if target_power_dB > self.thresh_dB:
+                any_signal_above_threshold = True
             
             if source not in self.station_plots:
                 self.station_plots[source], = self.ax.plot(
@@ -327,8 +342,8 @@ class GroundStation:
                 del self.station_plots[source]
                 del self.circle_plots[source]
 
-        # Update target location
-        if self.data['target_location'] is not None:
+        # Update target location only if signal is above threshold
+        if self.data['target_location'] is not None and any_signal_above_threshold:
             x_target, y_target = self.data['target_location']
             self.target_plot.set_data([x_target], [y_target])
         else:
@@ -336,7 +351,7 @@ class GroundStation:
 
 if __name__ == "__main__":
     # Example usage as receiver:
-    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main", low_cutoff_Hz=500, thresh_dB=50)
+    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main", low_cutoff_Hz=500, thresh_dB=60)
     
     # Example usage as sender:
     # station = GroundStation('sender', host='10.33.1.252', port=58392, location=(4,0), name='corbin', low_cutoff_Hz=500, thresh_dB=50)
