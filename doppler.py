@@ -55,7 +55,36 @@ def get_drone(observed_freq, ground_stations):
     print(f"Drone velocity: ({v_x:.2f}, {v_y:.2f}, {v_h:.2f})")
     return result.x
 
+def doppler_shift(drone_position, drone_velocity, microphone_positions, source_frequency):
+    '''spoofs fake dopper shift data'''
+    c = 343  # Speed of sound (m/s)
+    frequencies = []
+    
+    for mic_pos in microphone_positions:
+        # Compute the vector from the drone to the microphone
+        r_i = mic_pos - drone_position  # Ignore z for the microphone (ground level)
+        # r_i = np.append(r_i, -drone_position[2])  # Add height difference (h) to the z-component
+        
+        # Compute the relative velocity component along the line of sight
+        v_parallel_i = np.dot(drone_velocity, r_i) / np.linalg.norm(r_i)
+        
+        # Compute the observed frequency at the microphone using the Doppler effect
+        observed_frequency = source_frequency * (c / (c - v_parallel_i))
+        frequencies.append(observed_frequency)
+    
+    return frequencies
+
 if __name__ == "__main__":
     ground_stations=[[0, 0, 0], [5, 0, 0], [0, 5, 0], [0, 10, 0], [10,0,0], [10,10,0], [10, 5, 0], [5, 10, 0]]
-    observed_freq = [5989.917549534555, 6000.0, 5987.656232287858, 5989.917549534555, 6010.116450000785, 6010.116450000785, 6012.3947670873995, 6000.0]
-    get_drone(observed_freq, ground_stations)
+    d_state_true = [5, 5, 5, 1, 0, 0] # [x, y, z, vz, vy, vz] position and velocity vector of drone 
+    d_pos_true = d_state_true[:3]
+    d_vel_true = d_state_true[3:] #m/s
+    # Inputs
+    drone_position = np.array(d_pos_true)  # Position of the drone (x_d, y_d, h)
+    drone_velocity = np.array(d_vel_true)  # Velocity of the drone (v_x, v_y, v_h)
+    microphone_positions = np.array(ground_stations)  # Positions of microphones
+    source_frequency = 6000  # Source frequency emitted by the drone
+
+    observed_frequencies = doppler_shift(drone_position, drone_velocity, microphone_positions, source_frequency)
+
+    drone_state_mes = get_drone(observed_frequencies, ground_stations)
