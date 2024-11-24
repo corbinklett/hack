@@ -28,7 +28,7 @@ def triangulate_target(circles):
     y0 = np.mean([c[1] for c in circles])
 
     # Minimize the objective function
-    result = minimize(objective, (x0, y0), method='BFGS')
+    result = minimize(objective, (x0, y0), method='Powell')
 
     if result.success:
         return result.x

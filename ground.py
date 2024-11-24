@@ -342,7 +342,7 @@ class GroundStation:
         
         # Set fixed plot limits
         self.ax.set_xlim(-20, 20)
-        self.ax.set_ylim(-20, 20)
+        self.ax.set_ylim(-2, 50)
         
         plt.tight_layout()
         plt.show(block=False)
