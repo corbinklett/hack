@@ -2,7 +2,7 @@ import socket
 import json
 import time
 
-def start_receiver(host='0.0.0.0', port=58392):
+def start_receiver(host='0.0.0.0', port=58393):
     """
     Starts a receiver that listens for incoming JSON data
     

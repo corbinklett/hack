@@ -153,10 +153,10 @@ class GroundStation:
 
 if __name__ == "__main__":
     # Example usage as receiver:
-    # station = GroundStation('receiver', host='0.0.0.0', port=58392)
+    station = GroundStation('receiver', host='0.0.0.0', port=58393)
     
     # Example usage as sender:
-    station = GroundStation('sender', host="10.33.1.252", port=58392)
+    # station = GroundStation('sender', host="10.33.1.252", port=58392)
     
     station.start()
     pass
