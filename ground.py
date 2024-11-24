@@ -54,7 +54,8 @@ class GroundStation:
             'gnd_location': [],
             'target_distance': [],
             'target_location': None,
-            'target_power_dB': []
+            'target_power_dB': [],
+            'station_names': []
         }
         
         # Add plotting setup
@@ -228,6 +229,7 @@ class GroundStation:
         self.data['gnd_location'] = []
         self.data['target_distance'] = []
         self.data['target_power_dB'] = []
+        self.data['station_names'] = []
         
         # Instead of clearing sender_data completely, just mark the data as processed
         processed_data = self.sender_data.copy()
@@ -249,6 +251,7 @@ class GroundStation:
             self.data['gnd_location'].append(gnd_location)
             self.data['target_distance'].append(target_distance)
             self.data['target_power_dB'].append(target_power_dB)
+            self.data['station_names'].append(station_name)
 
             if print_data:
                 print(f"Station: {station_name:15} Location: {gnd_location[0]:.2f}, {gnd_location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {target_distance:.2f} m, Target Power: {target_power_dB:.2f} dB")  
@@ -305,7 +308,7 @@ class GroundStation:
             distance = self.data['target_distance'][i]
             source = self.data['gnd_ip'][i]
             target_power_dB = self.data['target_power_dB'][i]
-            station_name = self.sender_data[source][3] if source in self.sender_data else self.name
+            station_name = self.data['station_names'][i]
             current_stations.add(source)
             
             # Check if any station detects signal above threshold
