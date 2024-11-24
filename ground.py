@@ -13,7 +13,7 @@ import matplotlib.animation as animation
 from multiprocessing import Process
 
 class GroundStation:
-    def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0), plot_enabled=False):
+    def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0), plot_enabled=False, name="S"):
         """
         Initialize a ground station that can act as either sender or receiver
         
@@ -21,6 +21,9 @@ class GroundStation:
             station_type (str): Either 'sender' or 'receiver'
             host (str): IP address to connect/listen to
             port (int): Port number to use
+            location (tuple): (x, y) coordinates of the station
+            plot_enabled (bool): Whether to enable real-time plotting
+            name (str): Name of the ground station
         """
         if station_type not in ['sender', 'receiver']:
             raise ValueError("station_type must be either 'sender' or 'receiver'")
@@ -32,6 +35,7 @@ class GroundStation:
         self.audio_processor = AudioProcessor()
         self.running = False
         self.location = location
+        self.name = name
         
         # For receiver to track multiple sender connections
         self.clients: Dict[str, socket.socket] = {}
@@ -139,7 +143,8 @@ class GroundStation:
                     self.sender_data[client_addr] = (
                         received_data['peak_freq'],
                         received_data['peak_power'],
-                        received_data['location']
+                        received_data['location'],
+                        received_data.get('name', f'Station {client_addr}')
                     )
                 
             except Exception as e:
@@ -172,7 +177,8 @@ class GroundStation:
                             "timestamp": time.time(),
                             "peak_freq": peak_freq,
                             "peak_power": peak_power,
-                            "location": self.location
+                            "location": self.location,
+                            "name": self.name
                         }
                         
                         json_data = json.dumps(data).encode('utf-8')
@@ -240,8 +246,8 @@ class GroundStation:
         """Initialize the real-time plotting"""
         plt.ion()  # Enable interactive mode
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
-        self.ax.set_xlabel("X Position")
-        self.ax.set_ylabel("Y Position")
+        self.ax.set_xlabel("X Position (m)")
+        self.ax.set_ylabel("Y Position (m)")
         self.ax.set_title("Ground Station Positions and Target Triangulation")
         self.ax.grid(True)
         
@@ -250,8 +256,9 @@ class GroundStation:
         self.circle_plots = {}
         self.target_plot, = self.ax.plot([], [], 'ro', markersize=10, label='Target')
         
-        self.ax.set_xlim(-10, 10)
-        self.ax.set_ylim(-10, 10)
+        # Set fixed plot limits
+        self.ax.set_xlim(-20, 20)
+        self.ax.set_ylim(-20, 20)
         self.ax.legend()
         
         plt.tight_layout()
@@ -268,11 +275,19 @@ class GroundStation:
             location = self.data['gnd_location'][i]
             distance = self.data['target_distance'][i]
             source = self.data['gnd_ip'][i]
+            station_name = self.sender_data[source][3] if source in self.sender_data else self.name
             current_stations.add(source)
             
             if source not in self.station_plots:
                 self.station_plots[source], = self.ax.plot(
                     [location[0]], [location[1]], 'bs', label=f'Station {source}'
+                )
+                # Add text annotation next to the station point
+                self.station_plots[source].text_annotation = self.ax.annotate(
+                    station_name,
+                    (location[0], location[1]),
+                    xytext=(5, 5),  # 5 points offset
+                    textcoords='offset points'
                 )
                 self.circle_plots[source] = Circle(
                     location, distance, fill=False, linestyle='--', alpha=0.5
@@ -280,12 +295,15 @@ class GroundStation:
                 self.ax.add_patch(self.circle_plots[source])
             else:
                 self.station_plots[source].set_data([location[0]], [location[1]])
+                # Update text annotation position
+                self.station_plots[source].text_annotation.set_position((location[0], location[1]))
                 self.circle_plots[source].center = location
                 self.circle_plots[source].radius = distance
 
         # Remove any stations that are no longer present
         for source in list(self.station_plots.keys()):
             if source not in current_stations:
+                self.station_plots[source].text_annotation.remove()  # Remove text annotation
                 self.station_plots[source].remove()
                 self.circle_plots[source].remove()
                 del self.station_plots[source]
@@ -298,43 +316,9 @@ class GroundStation:
         else:
             self.target_plot.set_data([], [])
 
-        self._update_plot_limits()
-
-    def _plot_all_data(self):
-        """This method is now just a placeholder since animation handles updates"""
-        pass
-
-    def _update_plot_limits(self):
-        """Update plot limits to show all points with some padding"""
-        if not self.data['gnd_location']:  # Check if we have any locations
-            return
-        
-        x_coords = [loc[0] for loc in self.data['gnd_location']]
-        y_coords = [loc[1] for loc in self.data['gnd_location']]
-        
-        # Add target location if available
-        if self.data['target_location'] is not None:
-            x_coords.append(self.data['target_location'][0])
-            y_coords.append(self.data['target_location'][1])
-        
-        if x_coords and y_coords:
-            x_min, x_max = min(x_coords), max(x_coords)
-            y_min, y_max = min(y_coords), max(y_coords)
-            
-            # Add padding (20% of range)
-            x_padding = max((x_max - x_min) * 0.2, 1.0)  # At least 1.0 unit padding
-            y_padding = max((y_max - y_min) * 0.2, 1.0)
-            
-            self.ax.set_xlim(x_min - x_padding, x_max + x_padding)
-            self.ax.set_ylim(y_min - y_padding, y_max + y_padding)
-
-    def get_all_peaks(self) -> Dict[str, Tuple[float, float]]:
-        """Get peak frequency and power from all sources including local"""
-        return self.sender_data
-
 if __name__ == "__main__":
     # Example usage as receiver:
-    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True)
+    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main")
     
     # Example usage as sender:
     # station = GroundStation('sender', port=58392)
