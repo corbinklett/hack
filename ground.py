@@ -222,7 +222,7 @@ class GroundStation:
         if self.station_type != 'receiver':
             raise RuntimeError("_audio_calcs should only be called by receiver stations")
         
-        # Clear old data before processing new readings
+        # Clear old data lists but don't clear sender_data yet
         self.data['gnd_ip'] = []
         self.data['freq'] = []
         self.data['power'] = []
@@ -231,15 +231,12 @@ class GroundStation:
         self.data['target_power_dB'] = []
         self.data['station_names'] = []
         
-        # Instead of clearing sender_data completely, just mark the data as processed
-        processed_data = self.sender_data.copy()
-        self.sender_data.clear()
-        
+        # Use sender_data directly instead of copying and clearing
         if print_data:
             print("\n=== Current Audio Data ===")
 
         triangulation_data = []
-        for gnd_ip, (freq, power, gnd_location, station_name, target_power_dB) in processed_data.items():
+        for gnd_ip, (freq, power, gnd_location, station_name, target_power_dB) in self.sender_data.items():
             if target_power_dB > self.thresh_dB:
                 target_distance = calculate_distance(target_power_dB, reference_db=80.0, reference_distance=2.0)
             else:
@@ -272,6 +269,10 @@ class GroundStation:
             print(f"Target Location: {x_target:.2f}, {y_target:.2f}")
             print("========================\n")
 
+        # Only clear sender_data after we're completely done with processing
+        # This ensures the plotting function has access to the data
+        self.sender_data.clear()
+
     
     def _setup_plot(self):
         """Initialize the real-time plotting"""
@@ -298,6 +299,10 @@ class GroundStation:
         """Animation update function"""
         if not plt.fignum_exists(self.fig.number):
             return
+        
+        # Add debug logging
+        print(f"Current stations in data: {self.data['gnd_ip']}")
+        print(f"Current plotted stations: {list(self.station_plots.keys())}")
         
         # Update or create station plots and circles
         current_stations = set()
