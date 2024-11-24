@@ -35,10 +35,10 @@ def setup_plot(buffer_size):
     freq_mask = (freqs >= 0) & (freqs <= max_freq_collected)  # New mask for frequencies
     line_freq, = ax2.plot(freqs[freq_mask], np.zeros(np.sum(freq_mask)), '-')
     peak_point, = ax2.plot([], [], 'ro', markersize=10, label='Peak')
-    ax2.set_xlim(0, max_freq_collected)  # Changed to 10000 Hz
-    ax2.set_ylim(0, 1)
+    ax2.set_xlim(0, max_freq_collected)
+    ax2.set_ylim(0, 60)
     ax2.set_xlabel("Frequency (Hz)")
-    ax2.set_ylabel("Magnitude")
+    ax2.set_ylabel("Magnitude (dB)")
     ax2.set_title("Real-Time FFT")
     ax2.legend()
     
@@ -80,7 +80,7 @@ def update_plot():
             # Ensure consistent array sizes for frequency plot and limit to 10000 Hz
             freqs = np.fft.fftfreq(buffer_size, 1/sample_rate)
             freq_mask = (freqs >= 0) & (freqs <= max_freq_collected)  # New mask for frequencies
-            fft_mag = np.abs(fft_data[freq_mask]) / buffer_size
+            fft_mag = 20 * np.log10(np.abs(fft_data[freq_mask]) + 1e-10)  # Convert to dB, removed buffer_size division
             
             # Update frequency plot with matching sizes
             line_freq.set_ydata(fft_mag)
