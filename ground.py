@@ -9,6 +9,8 @@ from typing import Optional, Dict, Tuple
 import sounddevice as sd
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
+import matplotlib.animation as animation
+from multiprocessing import Process
 
 class GroundStation:
     def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392, location=(0,0), plot_enabled=False):
@@ -37,7 +39,7 @@ class GroundStation:
         
         # Set the backend before importing pyplot
         import matplotlib
-        matplotlib.use('TkAgg')  # Use TkAgg backend which is more stable for threading
+        matplotlib.use('Qt5Agg')  # Change from TkAgg to Qt5Agg
 
         # Initialize data dictionary with empty lists
         self.data = {
@@ -58,17 +60,38 @@ class GroundStation:
         # Add plotting flag
         self.plot_enabled = plot_enabled
         if self.plot_enabled:
-            self._setup_plot()  # Initialize plot on main thread
-        
+            self._setup_plot()
+            # Set up animation
+            self.anim = animation.FuncAnimation(
+                self.fig, 
+                self._animate, 
+                interval=100,  # Update every 100ms
+                blit=False,
+                save_count=100  # Limit frame cache to 100 frames
+            )
+
     def start(self):
         """Start the ground station operations"""
         self.running = True
         
+        # Start receiver/sender in a separate thread
         if self.station_type == 'receiver':
-            self._start_receiver()
+            network_thread = Thread(target=self._start_receiver)
+            network_thread.daemon = True
+            network_thread.start()
         else:
-            self._start_sender()
+            network_thread = Thread(target=self._start_sender)
+            network_thread.daemon = True
+            network_thread.start()
             
+        # Run matplotlib in the main thread
+        if self.plot_enabled:
+            plt.show(block=True)
+        else:
+            # If no plot, keep main thread alive
+            while self.running:
+                time.sleep(0.1)
+
     def stop(self):
         """Stop the ground station operations"""
         self.running = False
@@ -86,12 +109,6 @@ class GroundStation:
         audio_thread = Thread(target=self._process_local_audio)
         audio_thread.daemon = True
         audio_thread.start()
-        
-        # Start plotting thread for receiver
-        if self.plot_enabled:
-            plot_thread = Thread(target=self._continuous_plot)
-            plot_thread.daemon = True
-            plot_thread.start()
         
         # Accept and handle client connections
         while self.running:
@@ -221,67 +238,92 @@ class GroundStation:
     
     def _setup_plot(self):
         """Initialize the real-time plotting"""
-        plt.ion()
+        plt.ion()  # Enable interactive mode
         self.fig, self.ax = plt.subplots(figsize=(10, 10))
         self.ax.set_xlabel("X Position")
         self.ax.set_ylabel("Y Position")
         self.ax.set_title("Ground Station Positions and Target Triangulation")
         self.ax.grid(True)
+        
+        # Initialize empty plots that we'll update later
+        self.station_plots = {}
+        self.circle_plots = {}
+        self.target_plot, = self.ax.plot([], [], 'ro', markersize=10, label='Target')
+        
+        self.ax.set_xlim(-10, 10)
+        self.ax.set_ylim(-10, 10)
+        self.ax.legend()
+        
         plt.tight_layout()
         plt.show(block=False)
 
-    def _plot_all_data(self):
-        """Plot ground station positions, distance circles, and triangulated target"""
-        if self.fig is None:
+    def _animate(self, frame):
+        """Animation update function"""
+        if not plt.fignum_exists(self.fig.number):
             return
-
-        # Clear previous plots
-        self.ax.clear()
-        self.station_plots = {}
-        self.circle_plots = {}
-        self.target_plot = None
-
-        # Calculate distances and prepare triangulation data
         
-        for source, (freq, power, location) in self.sender_data.items():
+        # Update or create station plots and circles
+        current_stations = set()
+        for i in range(len(self.data['gnd_ip'])):
+            location = self.data['gnd_location'][i]
+            distance = self.data['target_distance'][i]
+            source = self.data['gnd_ip'][i]
+            current_stations.add(source)
+            
+            if source not in self.station_plots:
+                self.station_plots[source], = self.ax.plot(
+                    [location[0]], [location[1]], 'bs', label=f'Station {source}'
+                )
+                self.circle_plots[source] = Circle(
+                    location, distance, fill=False, linestyle='--', alpha=0.5
+                )
+                self.ax.add_patch(self.circle_plots[source])
+            else:
+                self.station_plots[source].set_data([location[0]], [location[1]])
+                self.circle_plots[source].center = location
+                self.circle_plots[source].radius = distance
 
-            # Plot station and circle
-            self.ax.plot(location[0], location[1], 'bs', label=f'Station {source}')
-            circle = Circle(location, distance, fill=False, linestyle='--', alpha=0.5)
-            self.ax.add_patch(circle)
+        # Remove any stations that are no longer present
+        for source in list(self.station_plots.keys()):
+            if source not in current_stations:
+                self.station_plots[source].remove()
+                self.circle_plots[source].remove()
+                del self.station_plots[source]
+                del self.circle_plots[source]
 
-        # Calculate and plot triangulated target
-        target_location = triangulate_target(triangulation_data)
-        if target_location:
-            self.ax.plot(target_location[0], target_location[1], 'ro', 
-                        markersize=10, label='Target')
+        # Update target location
+        if self.data['target_location'] is not None:
+            x_target, y_target = self.data['target_location']
+            self.target_plot.set_data([x_target], [y_target])
+        else:
+            self.target_plot.set_data([], [])
 
-        # Update plot settings
-        self.ax.grid(True)
-        self.ax.legend()
         self._update_plot_limits()
-        
-        # Force drawing update
-        self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
+
+    def _plot_all_data(self):
+        """This method is now just a placeholder since animation handles updates"""
+        pass
 
     def _update_plot_limits(self):
         """Update plot limits to show all points with some padding"""
-        x_coords = []
-        y_coords = []
+        if not self.data['gnd_location']:  # Check if we have any locations
+            return
         
-        # Collect all x, y coordinates
-        for _, (_, _, location) in self.sender_data.items():
-            x_coords.append(location[0])
-            y_coords.append(location[1])
+        x_coords = [loc[0] for loc in self.data['gnd_location']]
+        y_coords = [loc[1] for loc in self.data['gnd_location']]
+        
+        # Add target location if available
+        if self.data['target_location'] is not None:
+            x_coords.append(self.data['target_location'][0])
+            y_coords.append(self.data['target_location'][1])
         
         if x_coords and y_coords:
             x_min, x_max = min(x_coords), max(x_coords)
             y_min, y_max = min(y_coords), max(y_coords)
             
             # Add padding (20% of range)
-            x_padding = (x_max - x_min) * 0.2
-            y_padding = (y_max - y_min) * 0.2
+            x_padding = max((x_max - x_min) * 0.2, 1.0)  # At least 1.0 unit padding
+            y_padding = max((y_max - y_min) * 0.2, 1.0)
             
             self.ax.set_xlim(x_min - x_padding, x_max + x_padding)
             self.ax.set_ylim(y_min - y_padding, y_max + y_padding)
@@ -290,19 +332,9 @@ class GroundStation:
         """Get peak frequency and power from all sources including local"""
         return self.sender_data
 
-    def _continuous_plot(self):
-        """Continuously update the plot at regular intervals"""
-        while self.running:
-            try:
-                if len(self.sender_data) > 0:  # Only plot if we have data
-                    self._plot_all_data()
-                plt.pause(0.1)  # Gives time for the GUI to update
-            except Exception as e:
-                print(f"Plot error: {e}")
-
 if __name__ == "__main__":
     # Example usage as receiver:
-    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=False)
+    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True)
     
     # Example usage as sender:
     # station = GroundStation('sender', port=58392)

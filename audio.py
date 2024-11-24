@@ -117,7 +117,7 @@ class AudioProcessor:
         line_time.set_ydata(data)
         line_freq.set_ydata(fft_mag)
         peak_point.set_data([peak_freq], [peak_power])
-        ax2.set_title(f"Real-Time FFT (Peak: {peak_freq:.1f} Hz, Magnitude: {peak_power:.3f})")
+        ax2.set_title(f"Real-Time FFT")
         fig.canvas.draw_idle()
         fig.canvas.flush_events()
 
