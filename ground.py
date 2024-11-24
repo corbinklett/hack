@@ -5,6 +5,9 @@ from audio import AudioProcessor
 from threading import Thread
 from typing import Optional, Dict, Tuple
 import sounddevice as sd
+from doppler import get_drone
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 class GroundStation:
     def __init__(self, station_type: str, host: str = '0.0.0.0', port: int = 58392):
@@ -150,13 +153,54 @@ class GroundStation:
     def get_all_peaks(self) -> Dict[str, Tuple[float, float]]:
         """Get peak frequency and power from all sources including local"""
         return self.sender_data
+    
+    def compute_drone_pos_doppler(self):
+        
+        # Get peak frequencies from all sources
+        peak_freqs = [freq for freq, _ in self.sender_data.values()]
+        ground_stations=[[0, 0, 0], [5, 0, 0], [0, 5, 0], [0, 10, 0], [10,0,0], [10,10,0], [10, 5, 0], [5, 10, 0]]
+        # Call get_drone function to locate the drone
+        drone_pos = get_drone(peak_freqs, ground_stations)
+        
+        return drone_pos
+    
+    def plot_frequencies(self):
+        fig, ax = plt.subplots()
+        ax.set_title('Real-time Frequency Plot')
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Frequency')
+        
+        x_data, y_data = [], []
+        line, = ax.plot(x_data, y_data, 'r-')
+
+        def update(frame):
+            if 'local' in self.sender_data:
+                peak_freq, _ = self.sender_data['local']
+                x_data.append(frame)
+                y_data.append(peak_freq)
+                line.set_data(x_data, y_data)
+                ax.relim()
+                ax.autoscale_view()
+            return line,
+
+        ani = animation.FuncAnimation(fig, update, frames=range(100), blit=True)
+        plt.show()
+    
+
 
 if __name__ == "__main__":
     # Example usage as receiver:
-    station = GroundStation('receiver', host='0.0.0.0', port=58393)
+    station1 = GroundStation('receiver', host='0.0.0.0', port=58394)
+    station2 = GroundStation('sender', host='0.0.0.0', port=58394)
     
     # Example usage as sender:
     # station = GroundStation('sender', host="10.33.1.252", port=58392)
+    station_thread1 = Thread(target=station1.start)
+    station_thread1.start()
+
+    station_thread2 = Thread(target=station2.start)
+    station_thread2.start()
     
-    station.start()
-    pass
+    # Plot frequencies
+    station1.plot_frequencies()
+    station2.plot_frequencies()
