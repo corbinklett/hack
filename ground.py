@@ -52,7 +52,8 @@ class GroundStation:
             'power': [],
             'gnd_location': [],
             'target_distance': [],
-            'target_location': None
+            'target_location': None,
+            'target_power_dB': []
         }
         
         # Add plotting setup
@@ -170,7 +171,7 @@ class GroundStation:
                 print("Streaming audio...")
                 # Start sending audio processing results
                 while self.running:
-                    peak_freq, peak_power = self.audio_processor._update_stream(plot=False)
+                    peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
                     
                     if peak_freq is not None and peak_power is not None:
                         data = {
@@ -178,7 +179,8 @@ class GroundStation:
                             "peak_freq": peak_freq,
                             "peak_power": peak_power,
                             "location": self.location,
-                            "name": self.name
+                            "name": self.name,
+                            "target_power_dB": target_power_dB
                         }
                         
                         json_data = json.dumps(data).encode('utf-8')
@@ -197,9 +199,9 @@ class GroundStation:
                            samplerate=self.audio_processor.sample_rate):
             print("Processing local audio...")
             while self.running:
-                peak_freq, peak_power = self.audio_processor._update_stream(plot=False)
+                peak_freq, peak_power, target_power_dB = self.audio_processor._update_stream(plot=False)
                 if peak_freq is not None and peak_power is not None:
-                    self.sender_data['local'] = (peak_freq, peak_power, self.location, self.name)
+                    self.sender_data['local'] = (peak_freq, peak_power, self.location, self.name, target_power_dB)
                     
                     # Process when we have fresh data from all connected clients plus local
                     if len(self.sender_data) == len(self.clients) + 1:  # +1 for local
@@ -219,17 +221,18 @@ class GroundStation:
             print("\n=== Current Audio Data ===")
 
         triangulation_data = []
-        for gnd_ip, (freq, power, gnd_location, station_name) in processed_data.items():
-            target_distance = calculate_distance(power, reference_db=23.0, reference_distance=1.0)
+        for gnd_ip, (freq, power, gnd_location, station_name, target_power_dB) in processed_data.items():
+            target_distance = calculate_distance(target_power_dB, reference_db=49.0, reference_distance=2.0)
             triangulation_data.append((gnd_location, target_distance))
             self.data['gnd_ip'].append(gnd_ip)
             self.data['freq'].append(freq)
             self.data['power'].append(power)
             self.data['gnd_location'].append(gnd_location)
             self.data['target_distance'].append(target_distance)
+            self.data['target_power_dB'].append(target_power_dB)
 
             if print_data:
-                print(f"Station: {station_name:15} Location: {gnd_location[0]:.2f}, {gnd_location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {target_distance:.2f} m")  
+                print(f"Station: {station_name:15} Location: {gnd_location[0]:.2f}, {gnd_location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {target_distance:.2f} m, Target Power: {target_power_dB:.2f} dB")  
     
         x_target, y_target = triangulate_target(triangulation_data)
         self.data['target_location'] = (x_target, y_target)
@@ -318,7 +321,7 @@ if __name__ == "__main__":
     station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main")
     
     # Example usage as sender:
-    # station = GroundStation('sender', port=58392)
+    # station = GroundStation('sender', host='10.33.1.252', port=58392, location=(4,0), name='corbin')
     
     station.start()
     pass
