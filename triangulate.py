@@ -5,11 +5,11 @@ from scipy.optimize import minimize
 def triangulate_target(ground_stations):
     """
     Triangulate the position of the target based on a list of ground stations.
-    Each ground station is a tuple of (x, y, distance), where (x, y) is the
+    Each ground station is a tuple of ((x, y), distance), where (x, y) is the
     position of the station and 'distance' is the distance from the target.
     
     Arguments:
-    ground_stations -- list of tuples [(x1, y1, d1), (x2, y2, d2), ..., (xn, yn, dn)]
+    ground_stations -- list of tuples [((x1, y1), d1), ((x2, y2), d2), ..., ((xn, yn), dn)]
     
     Returns:
     A tuple (x_target, y_target) representing the best guess for the target's position.
@@ -19,7 +19,8 @@ def triangulate_target(ground_stations):
     def residuals(params):
         x_t, y_t = params
         residuals_sum = 0
-        for (x_i, y_i, d_i) in ground_stations:
+        for (pos, d_i) in ground_stations:
+            x_i, y_i = pos
             # Compute the distance from the estimated target to each ground station
             calculated_distance = np.sqrt((x_t - x_i)**2 + (y_t - y_i)**2)
             # The residual is the difference between the actual distance and the calculated distance
@@ -27,7 +28,7 @@ def triangulate_target(ground_stations):
         return residuals_sum
     
     # Initial guess for the target's position (using the centroid of the stations as a starting point)
-    initial_guess = np.mean([station[:2] for station in ground_stations], axis=0)
+    initial_guess = np.mean([station[0] for station in ground_stations], axis=0)
     
     # Minimize the residuals to find the best estimate of the target position
     result = minimize(residuals, initial_guess, method='Nelder-Mead')
@@ -46,9 +47,9 @@ if __name__ == "__main__":
     # On the receiver computer, run:
         # Example usage:
     ground_stations = [
-        (0, 3, 5),  # Station at (0, 0) with a distance of 5 units
-        (0, -3, 8),  # Station at (4, 0) with a distance of 5 units
-        (-1, 0, 6)   # Station at (2, 4) with a distance of 4 units
+        ((0, 3), 5),  # Station at (0, 0) with a distance of 5 units
+        ((0, -3), 8),  # Station at (4, 0) with a distance of 5 units
+        ((-1, 0), 6)   # Station at (2, 4) with a distance of 4 units
     ]
     
     target_position = triangulate_target(ground_stations)
@@ -61,7 +62,8 @@ if __name__ == "__main__":
     ax = plt.gca()
     
     # Plot each ground station and its corresponding circle
-    for (x_i, y_i, d_i) in ground_stations:
+    for (pos, d_i) in ground_stations:
+        x_i, y_i = pos
         circle = plt.Circle((x_i, y_i), d_i, color='blue', fill=False, linestyle='--', label=f'Station ({x_i}, {y_i})')
         ax.add_patch(circle)
         plt.plot(x_i, y_i, 'bo')  # Plot the station as blue dots
@@ -77,6 +79,3 @@ if __name__ == "__main__":
     plt.gca().set_aspect('equal', adjustable='box')
     plt.grid(True)
     plt.show()
-    
-   
-    pass

@@ -17,11 +17,11 @@ def calculate_distance(measured_db, reference_db=94.0, reference_distance=1.0):
         The default reference of 94 dB is a common calibrator level.
     """
     # Convert dB to intensity ratio
-    # Using I1/I2 = 10^((dB1-dB2)/10)
-    intensity_ratio = 10 ** ((reference_db - measured_db) / 10)
+    # Using P1/P2 = 10^((dB1-dB2)/20)
+    pressure_ratio = 10 ** ((reference_db - measured_db) / 20)
     
     # Apply inverse square law
-    return reference_distance * np.sqrt(intensity_ratio)
+    return reference_distance * np.sqrt(pressure_ratio)
 
 if __name__ == "__main__":
     # Test values
