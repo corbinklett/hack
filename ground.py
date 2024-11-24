@@ -41,6 +41,9 @@ class GroundStation:
         self.circle_plots = {}
         self.target_plot = None
         
+        # Add plotting flag
+        self.plot_enabled = station_type == 'receiver'
+        
     def start(self):
         """Start the ground station operations"""
         self.running = True
@@ -67,6 +70,12 @@ class GroundStation:
         audio_thread = Thread(target=self._process_local_audio)
         audio_thread.daemon = True
         audio_thread.start()
+        
+        # Start plotting thread for receiver
+        if self.plot_enabled:
+            plot_thread = Thread(target=self._continuous_plot)
+            plot_thread.daemon = True
+            plot_thread.start()
         
         # Accept and handle client connections
         while self.running:
@@ -236,6 +245,13 @@ class GroundStation:
     def get_all_peaks(self) -> Dict[str, Tuple[float, float]]:
         """Get peak frequency and power from all sources including local"""
         return self.sender_data
+
+    def _continuous_plot(self):
+        """Continuously update the plot at regular intervals"""
+        while self.running:
+            if len(self.sender_data) > 0:  # Only plot if we have data
+                self._plot_all_data()
+            time.sleep(0.1)  # Update plot every 100ms
 
 if __name__ == "__main__":
     # Example usage as receiver:
