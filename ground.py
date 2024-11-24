@@ -38,6 +38,16 @@ class GroundStation:
         # Set the backend before importing pyplot
         import matplotlib
         matplotlib.use('TkAgg')  # Use TkAgg backend which is more stable for threading
+
+        # Initialize data dictionary with empty lists
+        self.data = {
+            'gnd_ip': [],
+            'freq': [],
+            'power': [],
+            'gnd_location': [],
+            'target_distance': [],
+            'target_location': None
+        }
         
         # Add plotting setup
         self.fig, self.ax = None, None
@@ -107,17 +117,20 @@ class GroundStation:
                     break
                     
                 received_data = json.loads(data.decode('utf-8'))
-                self.sender_data[client_addr] = (
-                    received_data['peak_freq'],
-                    received_data['peak_power'],
-                    received_data['location']
-                )
-                self._print_all_data()
+                # Only update data if we're awaiting new readings
+                if client_addr not in self.sender_data:
+                    self.sender_data[client_addr] = (
+                        received_data['peak_freq'],
+                        received_data['peak_power'],
+                        received_data['location']
+                    )
                 
             except Exception as e:
                 print(f"Error handling client {client_addr}: {e}")
                 break
                 
+        # Clean up when client disconnects
+        print(f"Client {client_addr} disconnected")
         del self.clients[client_addr]
         del self.sender_data[client_addr]
         client_socket.close()
@@ -164,26 +177,47 @@ class GroundStation:
                 peak_freq, peak_power = self.audio_processor._update_stream(plot=False)
                 if peak_freq is not None and peak_power is not None:
                     self.sender_data['local'] = (peak_freq, peak_power, self.location)
-                    self._print_all_data()
+                    
+                    # Process when we have fresh data from all connected clients plus local
+                    if len(self.sender_data) == len(self.clients) + 1:  # +1 for local
+                        self._audio_calcs(print_data=True)
+                        # Clear all data after processing
+                        self.sender_data.clear()
+                
                 time.sleep(0.1)
-
-    def _print_all_data(self):
-        """Print peak frequencies and powers from all sources"""
-        print("\n=== Current Audio Data ===")
-        source, freq, power, location, triangulation_data, (x_target, y_target) = self._audio_calcs(print_data=True)
-        print(f"Target Location: {x_target:.2f}, {y_target:.2f}")
-        print("========================\n")
 
     def _audio_calcs(self, print_data=False):
         """Calculate audio data"""
+        # Clear existing data while preserving dictionary structure
+        for key in self.data:
+            if isinstance(self.data[key], list):
+                self.data[key].clear()
+            else:
+                self.data[key] = None
+
+        if print_data:
+            print("\n=== Current Audio Data ===")
+
         triangulation_data = []
-        for source, (freq, power, location) in self.sender_data.items():
-            distance = calculate_distance(power, reference_db=94.0, reference_distance=1.0)
-            triangulation_data.append((location, distance))
+        for gnd_ip, (freq, power, gnd_location) in self.sender_data.items():
+            target_distance = calculate_distance(power, reference_db=94.0, reference_distance=1.0)
+            triangulation_data.append((gnd_location, target_distance))
+            self.data['gnd_ip'].append(gnd_ip)
+            self.data['freq'].append(freq)
+            self.data['power'].append(power)
+            self.data['gnd_location'].append(gnd_location)
+            self.data['target_distance'].append(target_distance)
+
             if print_data:
-                print(f"Station: {source:15} Location: {location[0]:.2f}, {location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {distance:.2f} m")  
+                print(f"Station: {gnd_ip:15} Location: {gnd_location[0]:.2f}, {gnd_location[1]:.2f} Frequency: {freq:.2f} Hz, Power: {power:.2f} dB, Source Distance: {target_distance:.2f} m")  
+    
         x_target, y_target = triangulate_target(triangulation_data)
-        return source,freq, power, location, triangulation_data, (x_target, y_target)
+        self.data['target_location'] = (x_target, y_target)
+        
+        if print_data:
+            print(f"Target Location: {x_target:.2f}, {y_target:.2f}")
+            print("========================\n")
+
     
     def _setup_plot(self):
         """Initialize the real-time plotting"""
@@ -268,7 +302,7 @@ class GroundStation:
 
 if __name__ == "__main__":
     # Example usage as receiver:
-    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True)
+    station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=False)
     
     # Example usage as sender:
     # station = GroundStation('sender', port=58392)
