@@ -1,83 +1,84 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 
-def triangulate_target(ground_stations):
+def triangulate_target(circles):
     """
-    Triangulate the position of the target based on a list of ground stations.
-    Each ground station is a tuple of ((x, y), distance), where (x, y) is the
-    position of the station and 'distance' is the distance from the target.
+    Find the point closest to the intersection of n circles.
     
-    Arguments:
-    ground_stations -- list of tuples [((x1, y1), d1), ((x2, y2), d2), ..., ((xn, yn), dn)]
-    
+    Parameters:
+        circles (list): Each element is a tuple ((x, y), r) where (x, y) is the center
+                       and r is the radius.
     Returns:
-    A tuple (x_target, y_target) representing the best guess for the target's position.
+        tuple: Coordinates (x, y) of the closest point to the intersection.
     """
+    # Convert input format to list of (x, y, r)
+    circles = [(center[0], center[1], radius) for center, radius in circles]
     
-    # Function to compute the residuals (sum of squared differences between actual and calculated distances)
-    def residuals(params):
-        x_t, y_t = params
-        residuals_sum = 0
-        for (pos, d_i) in ground_stations:
-            x_i, y_i = pos
-            # Compute the distance from the estimated target to each ground station
-            calculated_distance = np.sqrt((x_t - x_i)**2 + (y_t - y_i)**2)
-            # The residual is the difference between the actual distance and the calculated distance
-            residuals_sum += (calculated_distance - d_i)**2
-        return residuals_sum
-    
-    # Initial guess for the target's position (using the centroid of the stations as a starting point)
-    initial_guess = np.mean([station[0] for station in ground_stations], axis=0)
-    
-    # Minimize the residuals to find the best estimate of the target position
-    result = minimize(residuals, initial_guess, method='Nelder-Mead')
-    
+    # Objective function
+    def objective(point):
+        x, y = point
+        residuals = [
+            (np.sqrt((x - cx)**2 + (y - cy)**2) - r)**2
+            for cx, cy, r in circles
+        ]
+        return sum(residuals)
+
+    # Initial guess: centroid of circle centers
+    x0 = np.mean([c[0] for c in circles])
+    y0 = np.mean([c[1] for c in circles])
+
+    # Minimize the objective function
+    result = minimize(objective, (x0, y0), method='Powell')
+
     if result.success:
-        x_target, y_target = result.x
+        return result.x
     else:
-        x_target = 0
-        y_target = 0
-        # raise ValueError("Triangulation failed to converge.")
+        raise ValueError("Optimization failed!")
+    
+import matplotlib.pyplot as plt
 
-    return x_target, y_target
+def plot_circles_and_point(circles, point):
+    fig, ax = plt.subplots()
+    for cx, cy, r in circles:
+        circle = plt.Circle((cx, cy), r, fill=False, linestyle='--')
+        ax.add_artist(circle)
+    ax.plot(point[0], point[1], 'ro', label='Closest Point')
+    ax.set_xlim(-10, 20)
+    ax.set_ylim(-10, 20)
+    ax.set_aspect('equal', 'box')
+    plt.legend()
+    plt.show()
 
-
-
-# Example usage:
 if __name__ == "__main__":
-    # On the receiver computer, run:
-        # Example usage:
-    ground_stations = [
-        ((0, 3), 5),  # Station at (0, 0) with a distance of 5 units
-        ((0, -3), 8),  # Station at (4, 0) with a distance of 5 units
-        ((-1, 0), 6)   # Station at (2, 4) with a distance of 4 units
+    # Test cases
+    test_cases = [
+        # Original test case - roughly equilateral triangle arrangement
+        [((0, 0), 5), ((10, 0), 5), ((5, 8), 5)],
+                
+        # Two circles - barely touching
+        [((0, 0), 3), ((5, 0), 3)],
+        
+        # Overlapping circles with different radii
+        [((0, 0), 3), ((2, 0), 4), ((1, 2), 2)],
+        
+        # Four circles arrangement
+        [((0, 0), 4), ((5, 0), 4), ((0, 5), 4), ((5, 5), 4)],
+        
+        # Circles with very different radii
+        [((0, 0), 10), ((8, 0), 3), ((4, 6), 5)],
+        
+        # Circles in a line
+        [((0, 0), 3), ((5, 0), 2), ((10, 0), 4)]
     ]
     
-    target_position = triangulate_target(ground_stations)
-    x_target = target_position[0]
-    y_target = target_position[1]
-    print(f"The estimated position of the target is: {target_position}")
-    
-     # Plotting the circles and target position
-    plt.figure(figsize=(8, 8))
-    ax = plt.gca()
-    
-    # Plot each ground station and its corresponding circle
-    for (pos, d_i) in ground_stations:
-        x_i, y_i = pos
-        circle = plt.Circle((x_i, y_i), d_i, color='blue', fill=False, linestyle='--', label=f'Station ({x_i}, {y_i})')
-        ax.add_patch(circle)
-        plt.plot(x_i, y_i, 'bo')  # Plot the station as blue dots
-    
-    # Plot the estimated target position
-    plt.plot(x_target, y_target, 'rx', label=f'Estimated Target ({x_target:.2f}, {y_target:.2f})', markersize=10)
-    
-    # Labels and title
-    plt.title('Triangulation of Target Position')
-    plt.xlabel('X Coordinate')
-    plt.ylabel('Y Coordinate')
-    plt.legend()
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.grid(True)
-    plt.show()
+    # Run tests for each case
+    for i, circles in enumerate(test_cases, 1):
+        print(f"\nTest Case {i}:")
+        try:
+            closest_point = triangulate_target(circles)
+            print(f"Closest point to intersection: {closest_point}")
+            
+            # Visualization
+            plot_circles_and_point([(c[0][0], c[0][1], c[1]) for c in circles], closest_point)
+        except Exception as e:
+            print(f"Error processing test case: {str(e)}")

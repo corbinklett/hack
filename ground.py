@@ -3,7 +3,7 @@ import json
 import time
 from audio import AudioProcessor
 from utilities import calculate_distance
-from triang2 import triangulate_target
+from triangulate import triangulate_target
 from threading import Thread
 from typing import Optional, Dict, Tuple
 import sounddevice as sd
@@ -411,7 +411,7 @@ if __name__ == "__main__":
     station = GroundStation('receiver', host='0.0.0.0', port=58392, plot_enabled=True, name="Main", low_cutoff_Hz=500, thresh_dB=30)
     
     # Example usage as sender:
-    # station = GroundStation('sender', host='10.33.1.252', port=58392, location=(4,0), name='corbin', low_cutoff_Hz=500, thresh_dB=50)
+    # station = GroundStation('sender', host='specify host IP', port=58392, location=(4,0), name='stat_name', low_cutoff_Hz=500, thresh_dB=50)
     
     station.start()
     pass
